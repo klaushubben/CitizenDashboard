@@ -19,6 +19,7 @@ export function TipFooter({ tipAmountInput, onSetTipAmount, onSendTip, isTipPend
         </button>
       </div>
       {tipTxHash ? <p className="muted">Tip sent: {tipTxHash}</p> : null}
+      <span className="version-tag">v{__APP_VERSION__}</span>
     </footer>
   );
 }

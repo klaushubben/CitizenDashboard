@@ -760,6 +760,12 @@ tbody tr:hover {
   color: #fff;
 }
 
+.version-tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  color: #555a65;
+}
+
 .tip-row {
   display: flex;
   gap: 8px;

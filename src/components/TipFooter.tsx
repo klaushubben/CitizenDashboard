@@ -15,7 +15,7 @@ export function TipFooter({ tipAmountInput, onSetTipAmount, onSendTip, isTipPend
       <div className="tip-row">
         <input aria-label="Tip amount" value={tipAmountInput} onChange={(e) => onSetTipAmount(e.target.value)} className="tip-input" />
         <button className="btn btn-primary" onClick={onSendTip} disabled={isTipPending}>
-          THANKS KLAUS!
+          THANKS!
         </button>
       </div>
       {tipTxHash ? <p className="muted">Tip sent: {tipTxHash}</p> : null}

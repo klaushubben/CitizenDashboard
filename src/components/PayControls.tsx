@@ -38,7 +38,7 @@ export function PayControls({
         Select All Due
       </button>
 
-      <button className="btn btn-primary" onClick={onPaySelected} disabled={!selectedCount || isPaying}>
+      <button className="btn btn-primary" onClick={onPaySelected} disabled={!selectedCount || selectedDueWei === 0n || isPaying}>
         Pay Selected ({selectedCount})
       </button>
 

@@ -13,12 +13,17 @@ export function TipFooter({ tipAmountInput, onSetTipAmount, onSendTip, isTipPend
         built with <span className="tip-heart">♥</span> by klausblocks.eth. enjoying this utility? feel free to tip:
       </p>
       <div className="tip-row">
-        <input name="tip-amount" aria-label="Tip amount" value={tipAmountInput} onChange={(e) => onSetTipAmount(e.target.value)} className="tip-input" />
-        <button className="btn btn-primary" onClick={onSendTip} disabled={isTipPending}>
+        <input
+          aria-label="Tip amount"
+          value={tipAmountInput}
+          onChange={(e) => onSetTipAmount(e.target.value)}
+          className="tip-input"
+        />
+        <button type="button" className="btn btn-primary" onClick={onSendTip} disabled={isTipPending}>
           THANKS!
         </button>
       </div>
-      {tipTxHash ? <p className="muted">Tip sent: {tipTxHash}</p> : null}
+      {tipTxHash && <p className="muted">Tip sent: {tipTxHash}</p>}
       <span className="version-tag">v{__APP_VERSION__}</span>
     </footer>
   );

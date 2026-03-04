@@ -746,9 +746,8 @@ tbody tr:hover {
   justify-content: center;
   align-items: center;
   gap: 10px;
-  flex-wrap: nowrap;
   text-align: center;
-  font-size: calc(1rem - 2pt);
+  font-size: 0.85rem;
 }
 
 .tip-footer p {
@@ -762,7 +761,7 @@ tbody tr:hover {
 
 .version-tag {
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.58rem;
+  font-size: 0.6rem;
   color: #555a65;
 }
 
@@ -777,11 +776,8 @@ tbody tr:hover {
   height: 42px;
 }
 
-
 .tip-input {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
+  flex: 0 0 120px;
   padding: 0 10px;
   border: 2px solid #384150;
   background: #10141a;

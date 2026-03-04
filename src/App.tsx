@@ -21,7 +21,7 @@ import { EvaderSection } from "./components/EvaderSection";
 import { EvaderDetailDrawer } from "./components/EvaderDetailDrawer";
 import { ConnectModal } from "./components/ConnectModal";
 import { TipFooter } from "./components/TipFooter";
-import { AuditTargets } from "./components/AuditTargets";
+// import { AuditTargets } from "./components/AuditTargets";
 
 type NotificationSnapshot = {
   dueByToken: Map<string, bigint>;
@@ -186,7 +186,7 @@ export default function App() {
 
   // --- Derived ---
 
-  const ownedTokenIds = useMemo(() => rows.map((r) => r.tokenId), [rows]);
+  // const ownedTokenIds = useMemo(() => rows.map((r) => r.tokenId), [rows]);
   const selectedRows = useMemo(() => rows.filter((r) => selectedTokenIds.has(r.tokenId.toString())), [rows, selectedTokenIds]);
   const selectedDueWei = useMemo(() => selectedRows.reduce((acc, row) => acc + row.dueWei, 0n), [selectedRows]);
   const dueRowsCount = useMemo(() => rows.filter((r) => r.dueWei > 0n).length, [rows]);
@@ -337,7 +337,7 @@ export default function App() {
         onOpenDetails={(tokenId) => setActiveEvaderTokenId(tokenId.toString())}
       />
 
-      <AuditTargets isConnected={isConnected} ownedTokenIds={ownedTokenIds} />
+      {/* <AuditTargets isConnected={isConnected} ownedTokenIds={ownedTokenIds} /> */}
 
       <TipFooter
         tipAmountInput={tipAmountInput}

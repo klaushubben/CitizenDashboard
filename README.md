@@ -1,26 +1,29 @@
-# Death and Taxes Dashboard (Non-Custodial)
+# d/t: tax dashboard
 
-A wallet-connected dashboard for Death and Taxes on Ethereum mainnet.
+A wallet-connected dashboard for [Death and Taxes](https://deptof.death) on Ethereum mainnet.
 
-## Goals
+## Features
 
-- User signs in with wallet (Reown AppKit or injected wallet).
-- Dashboard loads owned Citizens with image + trait metadata.
-- Dashboard loads owned Evaders with image + trait metadata.
-- Shows per-token tax due, audit status, and game overview.
-- User manually approves `payTaxes` transactions.
-- Browser notifications while the page remains open.
+- **Wallet connection** via Reown AppKit or injected wallets (MetaMask, etc.)
+- **Citizen inventory** — loads all owned Citizens with on-chain metadata, IPFS images, and trait badges
+- **Tax overview** — per-token tax due, last epoch paid, runway visualization, and audit status
+- **Game stats** — current epoch, countdown to next epoch, tax rate, due/evader counts
+- **Batch pay** — select multiple Citizens and pay taxes sequentially (one tx per token)
+- **Evader gallery** — browse owned Evader NFTs with metadata and trait details
+- **Browser notifications** — alerts when a token transitions to taxes due or audit state
+- **Manual refresh** — chain data loads once on connect; refresh on demand to avoid RPC rate limits
 
-## Important constraints
+## Constraints
 
-- This is non-custodial: no private keys are stored by the app.
+- **Non-custodial**: no private keys are stored by the app.
 - `payTaxes(tokenId, numEpochsToPay)` is single-token per transaction.
-- "Pay Selected" sends sequential individual tx requests; it does not batch onchain.
-- Gas savings come mainly from choosing higher `numEpochsToPay` (fewer future txs), not from multi-token batching.
+- "Pay Selected" sends sequential individual tx requests; it does not batch on-chain.
+- Gas savings come from choosing higher `numEpochsToPay` (fewer future txs), not from multi-token batching.
+- The Citizens contract is basic ERC721 (no Enumerable), so token discovery uses a chunked `ownerOf` scan across all 6969 tokens. Results are cached per session.
 
 ## Setup
 
-1. From this directory:
+1. Install dependencies:
 
 ```bash
 npm install
@@ -41,16 +44,20 @@ If omitted, the app will still run with injected wallets only (no Reown QR modal
 npm run dev
 ```
 
-## Network and contracts
+## Contracts
 
-- Chain: Ethereum Mainnet
-- RPC: `https://ethereum-rpc.publicnode.com`
-- Citizens: `0x4F249b2DC6Cecbd549A0C354BBFc4919E8C5D3aE`
-- Game: `0xa448c7f618087dDa1a3B128cAd8A424fBae4B71F`
+| Contract | Address |
+|----------|---------|
+| Citizens | `0x4F249b2DC6Cecbd549A0C354BBFc4919E8C5D3aE` |
+| Game (DeathAndTaxes) | `0xa448c7f618087dDa1a3B128cAd8A424fBae4B71F` |
+| Evaders | `0x075F90FF6B89a1C164fb352BEbd0a16F55804cA2` |
 
-## Notification behavior
+Chain: Ethereum Mainnet
 
-- On first load, app requests browser notification permission.
-- While open, it polls every 30s and notifies when:
-  - a token transitions from no dues to dues,
-  - a token transitions into active audit state.
+## Stack
+
+- React 18 + TypeScript
+- Vite
+- wagmi v2 + viem
+- TanStack React Query
+- WalletConnect (Reown AppKit)

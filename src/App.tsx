@@ -257,24 +257,16 @@ export default function App() {
           args: [item.tokenId, numEpochs]
         }) as bigint;
 
-        if (freshEstimate === 0n && (!row || !row.projected)) {
-          // Truly nothing to pay and not a projected citizen — skip
+        if (freshEstimate === 0n) {
+          // Citizen is already current or ahead — contract rejects payment until next epoch
           setCart((prev) => prev.map((c) =>
-            c.tokenId === item.tokenId ? { ...c, status: "pending" as const } : c
+            c.tokenId === item.tokenId ? { ...c, status: "failed" as const, error: "Already paid up — wait for next epoch" } : c
           ));
           setBatchProgress({ done: i + 1, total: pendingItems.length });
           continue;
         }
 
-        // Use fresh estimate when available, otherwise fall back to client-side estimate
-        const payValue = freshEstimate > 0n
-          ? freshEstimate
-          : (row ? row.baseRateWei * BigInt(numEpochs) : 0n);
-
-        if (payValue === 0n) {
-          setBatchProgress({ done: i + 1, total: pendingItems.length });
-          continue;
-        }
+        const payValue = freshEstimate;
 
         setCart((prev) => prev.map((c) =>
           c.tokenId === item.tokenId ? { ...c, status: "executing" as const } : c

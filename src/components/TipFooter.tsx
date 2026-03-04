@@ -13,7 +13,7 @@ export function TipFooter({ tipAmountInput, onSetTipAmount, onSendTip, isTipPend
         built with <span className="tip-heart">♥</span> by klausblocks.eth. enjoying this utility? feel free to tip:
       </p>
       <div className="tip-row">
-        <input aria-label="Tip amount" value={tipAmountInput} onChange={(e) => onSetTipAmount(e.target.value)} className="tip-input" />
+        <input name="tip-amount" aria-label="Tip amount" value={tipAmountInput} onChange={(e) => onSetTipAmount(e.target.value)} className="tip-input" />
         <button className="btn btn-primary" onClick={onSendTip} disabled={isTipPending}>
           THANKS!
         </button>

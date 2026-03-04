@@ -54,6 +54,8 @@ export function CartPanel({
         </div>
       </div>
 
+      <p className="cart-hint">Pay 1 epoch to catch up, or up to 7 to prepay ahead. Citizens already current must wait for the next epoch.</p>
+
       {cart.length === 0 ? (
         <div className="empty">No citizens in cart. Add citizens from the table above.</div>
       ) : (

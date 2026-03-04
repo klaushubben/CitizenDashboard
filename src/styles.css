@@ -391,6 +391,13 @@ select {
   font-size: 0.8rem;
 }
 
+.cart-hint {
+  margin: 0 0 10px;
+  font-size: calc(0.68rem + 2pt);
+  color: #7e8592;
+  line-height: 1.4;
+}
+
 .cart-list {
   display: grid;
   gap: 4px;

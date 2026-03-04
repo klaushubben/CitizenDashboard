@@ -145,8 +145,7 @@ async function fetchMetadata(
 
 export async function loadDashboardRows(
   publicClient: PublicClient,
-  owner: Address,
-  numEpochsToPay: number
+  owner: Address
 ): Promise<CitizenDashboardRow[]> {
   const tokenIds = await findOwnedTokenIds(publicClient, owner);
 
@@ -154,13 +153,13 @@ export async function loadDashboardRows(
     return [];
   }
 
-  const [dueResults, auditDueResults, lastEpochResults, metadataList] = await Promise.all([
+  const [dueResults, auditDueResults, lastEpochResults, metadataList, currentEpoch, taxRate] = await Promise.all([
     publicClient.multicall({
       contracts: tokenIds.map((tokenId) => ({
         address: GAME_ADDRESS,
         abi: gameAbi,
         functionName: "estimateTaxesToPay" as const,
-        args: [tokenId, numEpochsToPay]
+        args: [tokenId, 1]
       })),
       allowFailure: false
     }),
@@ -182,23 +181,48 @@ export async function loadDashboardRows(
       })),
       allowFailure: false
     }),
-    fetchMetadata(publicClient, CITIZENS_ADDRESS, citizensAbi, tokenIds)
+    fetchMetadata(publicClient, CITIZENS_ADDRESS, citizensAbi, tokenIds),
+    publicClient.readContract({ address: GAME_ADDRESS, abi: gameAbi, functionName: "currentEpoch" }) as Promise<bigint>,
+    publicClient.readContract({ address: GAME_ADDRESS, abi: gameAbi, functionName: "getCurrentTaxRate" }) as Promise<bigint>
   ]);
 
   return tokenIds.map((tokenId, index) => {
-    const dueWei = (dueResults[index] as bigint) ?? 0n;
+    const contractDue = (dueResults[index] as bigint) ?? 0n;
+    const lastEpochPaid = (lastEpochResults[index] as bigint) ?? 0n;
     const meta = metadataList[index];
+
+    // Contract returns 0 when citizen is caught up (lastEpochPaid >= currentEpoch).
+    // Calculate projected cost for the next time taxes are payable.
+    let dueWei = contractDue;
+    let baseRateWei = contractDue;
+    let projected = false;
+
+    if (contractDue === 0n && currentEpoch > 0n) {
+      // Citizen is caught up or ahead — project the cost for when they next owe
+      const epochWhenDue = (lastEpochPaid >= currentEpoch ? lastEpochPaid : currentEpoch) + 1n;
+      const projectedRate = taxRate * epochWhenDue / currentEpoch;
+      dueWei = projectedRate;
+      baseRateWei = projectedRate;
+      projected = true;
+    }
 
     return {
       tokenId,
       dueWei,
       dueEth: formatEther(dueWei),
+      baseRateWei,
+      projected,
       auditDueTimestamp: (auditDueResults[index] as bigint) ?? 0n,
-      lastEpochPaid: (lastEpochResults[index] as bigint) ?? 0n,
+      lastEpochPaid,
       metadata: meta?.metadata ?? null,
       imageUrl: meta?.imageUrl ?? null
     };
   });
+}
+
+/** Approximate cost for N epochs. Marked with ~ in the UI; exact cost computed at execution time. */
+export function estimateCostForEpochs(row: CitizenDashboardRow, numEpochs: number): bigint {
+  return row.baseRateWei * BigInt(numEpochs);
 }
 
 export async function loadEvaderRows(publicClient: PublicClient, owner: Address): Promise<EvaderDashboardRow[]> {

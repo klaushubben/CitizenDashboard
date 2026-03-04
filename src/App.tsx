@@ -11,12 +11,12 @@ import {
 } from "wagmi";
 import { parseEther } from "viem";
 import { loadDashboardRows, loadEvaderRows, invalidateOwnershipCache } from "./lib/dashboard";
-import { CitizenDashboardRow, GAME_ADDRESS, gameAbi } from "./lib/contracts";
+import { CartItem, CitizenDashboardRow, GAME_ADDRESS, gameAbi } from "./lib/contracts";
 import { shortTxError } from "./lib/citizen-utils";
 import { GameOverviewBar } from "./components/GameOverviewBar";
 import { StatusLine } from "./components/StatusLine";
 import { CitizenSection } from "./components/CitizenSection";
-import { PayControls } from "./components/PayControls";
+import { CartPanel } from "./components/CartPanel";
 import { EvaderSection } from "./components/EvaderSection";
 import { EvaderDetailDrawer } from "./components/EvaderDetailDrawer";
 import { ConnectModal } from "./components/ConnectModal";
@@ -39,7 +39,6 @@ type TxError = {
   timestamp: number;
 };
 
-const DEFAULT_EPOCHS_TO_PAY = 1;
 const POLL_MS = 30_000;
 const EPOCH_SECONDS = 86_400;
 const KLAUS_TIP_ADDRESS = "0x49c08159de1ae3a8b2d5Cc7BAa9A23BA9E96910C" as const;
@@ -61,8 +60,8 @@ export default function App() {
   const { disconnect } = useDisconnect();
   const publicClient = usePublicClient();
 
-  const [numEpochsToPay, setNumEpochsToPay] = useState<number>(DEFAULT_EPOCHS_TO_PAY);
-  const [selectedTokenIds, setSelectedTokenIds] = useState<Set<string>>(new Set());
+  const [citizenEpochs, setCitizenEpochs] = useState<Map<string, number>>(new Map());
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [lastTxHash, setLastTxHash] = useState<`0x${string}` | undefined>();
   const [activeEvaderTokenId, setActiveEvaderTokenId] = useState<string | null>(null);
   const [showConnectModal, setShowConnectModal] = useState(false);
@@ -72,6 +71,7 @@ export default function App() {
   const [refreshPhase, setRefreshPhase] = useState(0);
   const [txError, setTxError] = useState<TxError | null>(null);
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
 
   const snapshotRef = useRef<NotificationSnapshot>({
     dueByToken: new Map(),
@@ -82,6 +82,14 @@ export default function App() {
   const { sendTransactionAsync, isPending: isTipPending } = useSendTransaction();
   const txReceipt = useWaitForTransactionReceipt({ hash: lastTxHash });
   const tipReceipt = useWaitForTransactionReceipt({ hash: tipTxHash });
+
+  function setCitizenEpochCount(tokenId: string, n: number): void {
+    setCitizenEpochs((prev) => {
+      const next = new Map(prev);
+      next.set(tokenId, n);
+      return next;
+    });
+  }
 
   // --- Queries ---
 
@@ -105,10 +113,10 @@ export default function App() {
   });
 
   const { data: rows = [], refetch: refetchCitizens, isFetching: isFetchingCitizens, error: rowsError } = useQuery({
-    queryKey: ["citizens", address, numEpochsToPay],
+    queryKey: ["citizens", address],
     queryFn: async () => {
       if (!publicClient || !address) return [];
-      return loadDashboardRows(publicClient, address, numEpochsToPay);
+      return loadDashboardRows(publicClient, address);
     },
     enabled: Boolean(publicClient && address)
   });
@@ -161,7 +169,7 @@ export default function App() {
       for (const row of rows) {
         const tokenKey = row.tokenId.toString();
         if (row.dueWei > 0n && (prev.dueByToken.get(tokenKey) ?? 0n) === 0n) {
-          new Notification(`Citizen #${tokenKey} has taxes due`, { body: `${row.dueEth} ETH due for ${numEpochsToPay} epoch(s).` });
+          new Notification(`Citizen #${tokenKey} has taxes due`, { body: `${row.dueEth} ETH due.` });
         }
         if (row.auditDueTimestamp > 0n && (prev.auditByToken.get(tokenKey) ?? 0n) === 0n) {
           new Notification(`Citizen #${tokenKey} is under audit`, { body: `Audit due by ${new Date(Number(row.auditDueTimestamp) * 1000).toLocaleString()}` });
@@ -172,7 +180,7 @@ export default function App() {
         auditByToken: new Map(rows.map((r) => [r.tokenId.toString(), r.auditDueTimestamp]))
       };
     });
-  }, [rows, numEpochsToPay]);
+  }, [rows]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -186,10 +194,8 @@ export default function App() {
 
   // --- Derived ---
 
-  // const ownedTokenIds = useMemo(() => rows.map((r) => r.tokenId), [rows]);
-  const selectedRows = useMemo(() => rows.filter((r) => selectedTokenIds.has(r.tokenId.toString())), [rows, selectedTokenIds]);
-  const selectedDueWei = useMemo(() => selectedRows.reduce((acc, row) => acc + row.dueWei, 0n), [selectedRows]);
-  const dueRowsCount = useMemo(() => rows.filter((r) => r.dueWei > 0n).length, [rows]);
+  const cartTokenIds = useMemo(() => new Set(cart.map((i) => i.tokenId.toString())), [cart]);
+  const dueRowsCount = useMemo(() => rows.filter((r) => r.dueWei > 0n && !r.projected).length, [rows]);
   const activeEvader = useMemo(() => evaderRows.find((row) => row.tokenId.toString() === activeEvaderTokenId) ?? null, [evaderRows, activeEvaderTokenId]);
 
   const nextEpochSeconds = useMemo(() => {
@@ -197,55 +203,116 @@ export default function App() {
     return Number(gameOverview.startTime + BigInt(EPOCH_SECONDS) * gameOverview.currentEpoch) - nowTs;
   }, [gameOverview, nowTs]);
 
-  // --- Actions ---
+  // --- Cart Actions ---
 
-  const payOne = useCallback(async (tokenId: bigint, dueWei: bigint): Promise<boolean> => {
-    if (dueWei <= 0n) return true;
-    setTxError(null);
-    try {
-      const hash = await writeContractAsync({
-        address: GAME_ADDRESS, abi: gameAbi, functionName: "payTaxes",
-        args: [tokenId, numEpochsToPay], value: dueWei
-      });
-      setLastTxHash(hash);
-      return true;
-    } catch (err) {
-      setTxError({ message: `#${tokenId.toString()}: ${shortTxError(err)}`, timestamp: Date.now() });
-      return false;
-    }
-  }, [writeContractAsync, numEpochsToPay]);
-
-  async function paySelectedSequentially(): Promise<void> {
-    const toPay = selectedRows.filter((r) => r.dueWei > 0n);
-    if (!toPay.length) return;
-    setTxError(null);
-    setBatchProgress({ done: 0, total: toPay.length });
-
-    for (let i = 0; i < toPay.length; i++) {
-      const row = toPay[i];
-      const ok = await payOne(row.tokenId, row.dueWei);
-      if (ok) {
-        setSelectedTokenIds((prev) => { const next = new Set(prev); next.delete(row.tokenId.toString()); return next; });
-      }
-      setBatchProgress({ done: i + 1, total: toPay.length });
-      if (!ok) { setBatchProgress(null); return; }
-    }
-    setBatchProgress(null);
-    await refetchCitizens();
-  }
-
-  function toggleToken(tokenId: bigint): void {
-    setSelectedTokenIds((prev) => {
-      const next = new Set(prev);
-      const key = tokenId.toString();
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
+  function addToCart(tokenId: bigint): void {
+    setCart((prev) => {
+      if (prev.some((i) => i.tokenId === tokenId)) return prev;
+      return [...prev, {
+        tokenId,
+        status: "pending" as const
+      }];
     });
   }
 
-  function selectAllDue(): void {
-    setSelectedTokenIds(new Set(rows.filter((r) => r.dueWei > 0n).map((r) => r.tokenId.toString())));
+  function addAllToCart(): void {
+    setCart((prev) => {
+      const existing = new Set(prev.map((i) => i.tokenId.toString()));
+      const newItems: CartItem[] = rows
+        .filter((r) => !existing.has(r.tokenId.toString()))
+        .map((r) => ({
+          tokenId: r.tokenId,
+          status: "pending" as const
+        }));
+      return [...prev, ...newItems];
+    });
   }
+
+  function removeFromCart(tokenId: bigint): void {
+    setCart((prev) => prev.filter((i) => i.tokenId !== tokenId));
+  }
+
+  function clearDone(): void {
+    setCart((prev) => prev.filter((i) => i.status !== "done"));
+  }
+
+  const executeCart = useCallback(async (): Promise<void> => {
+    if (!publicClient) return;
+    setIsExecuting(true);
+    setTxError(null);
+
+    const pendingItems = cart.filter((i) => i.status === "pending");
+    setBatchProgress({ done: 0, total: pendingItems.length });
+
+    for (let i = 0; i < pendingItems.length; i++) {
+      const item = pendingItems[i];
+      const numEpochs = citizenEpochs.get(item.tokenId.toString()) ?? 1;
+
+      // Re-estimate via contract (fresh on-chain cost)
+      try {
+        const row = rows.find((r) => r.tokenId === item.tokenId);
+        const freshEstimate = await publicClient.readContract({
+          address: GAME_ADDRESS, abi: gameAbi,
+          functionName: "estimateTaxesToPay",
+          args: [item.tokenId, numEpochs]
+        }) as bigint;
+
+        if (freshEstimate === 0n && (!row || !row.projected)) {
+          // Truly nothing to pay and not a projected citizen — skip
+          setCart((prev) => prev.map((c) =>
+            c.tokenId === item.tokenId ? { ...c, status: "pending" as const } : c
+          ));
+          setBatchProgress({ done: i + 1, total: pendingItems.length });
+          continue;
+        }
+
+        // Use fresh estimate when available, otherwise fall back to client-side estimate
+        const payValue = freshEstimate > 0n
+          ? freshEstimate
+          : (row ? row.baseRateWei * BigInt(numEpochs) : 0n);
+
+        if (payValue === 0n) {
+          setBatchProgress({ done: i + 1, total: pendingItems.length });
+          continue;
+        }
+
+        setCart((prev) => prev.map((c) =>
+          c.tokenId === item.tokenId ? { ...c, status: "executing" as const } : c
+        ));
+
+        try {
+          const hash = await writeContractAsync({
+            address: GAME_ADDRESS, abi: gameAbi, functionName: "payTaxes",
+            args: [item.tokenId, numEpochs], value: payValue
+          });
+          setLastTxHash(hash);
+          setCart((prev) => prev.map((c) =>
+            c.tokenId === item.tokenId ? { ...c, status: "done" as const, txHash: hash } : c
+          ));
+        } catch (err) {
+          const errorMsg = shortTxError(err);
+          setCart((prev) => prev.map((c) =>
+            c.tokenId === item.tokenId ? { ...c, status: "failed" as const, error: errorMsg } : c
+          ));
+          setTxError({ message: `#${item.tokenId.toString()}: ${errorMsg}`, timestamp: Date.now() });
+        }
+      } catch (err) {
+        const errorMsg = shortTxError(err);
+        setCart((prev) => prev.map((c) =>
+          c.tokenId === item.tokenId ? { ...c, status: "failed" as const, error: errorMsg } : c
+        ));
+        setTxError({ message: `#${item.tokenId.toString()}: ${errorMsg}`, timestamp: Date.now() });
+      }
+
+      setBatchProgress({ done: i + 1, total: pendingItems.length });
+    }
+
+    setBatchProgress(null);
+    setIsExecuting(false);
+    await refetchCitizens();
+  }, [cart, citizenEpochs, rows, publicClient, writeContractAsync, refetchCitizens]);
+
+  // --- Tip ---
 
   async function sendTip(): Promise<void> {
     if (!isConnected) { setShowConnectModal(true); return; }
@@ -314,21 +381,23 @@ export default function App() {
       <CitizenSection
         rows={rows}
         currentEpoch={gameOverview?.currentEpoch ?? null}
-        numEpochsToPay={numEpochsToPay}
-        selectedTokenIds={selectedTokenIds}
-        onToggleToken={toggleToken}
+        citizenEpochs={citizenEpochs}
+        onSetCitizenEpochs={setCitizenEpochCount}
+        cartTokenIds={cartTokenIds}
+        onAddToCart={addToCart}
         isConnected={isConnected}
       />
 
-      <PayControls
-        numEpochsToPay={numEpochsToPay}
-        onSetEpochs={setNumEpochsToPay}
-        onSelectAllDue={selectAllDue}
-        onPaySelected={() => void paySelectedSequentially()}
-        selectedCount={selectedRows.length}
-        selectedDueWei={selectedDueWei}
-        hasRows={rows.length > 0}
-        isPaying={isPending}
+      <CartPanel
+        cart={cart}
+        rows={rows}
+        citizenEpochs={citizenEpochs}
+        onAddAllToCart={addAllToCart}
+        onRemoveFromCart={removeFromCart}
+        onExecuteCart={() => void executeCart()}
+        onClearDone={clearDone}
+        isExecuting={isExecuting}
+        batchProgress={batchProgress}
       />
 
       <EvaderSection

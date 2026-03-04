@@ -148,8 +148,13 @@ export type CitizenDashboardRow = {
   tokenId: bigint;
   imageUrl: string | null;
   metadata: CitizenMetadata | null;
+  /** Cost for 1 epoch (actual from contract when behind, projected when caught up) */
   dueWei: bigint;
   dueEth: string;
+  /** Per-epoch rate for this citizen (used to scale cost for N epochs) */
+  baseRateWei: bigint;
+  /** true when dueWei is a client-side projection (citizen is caught up, contract returns 0) */
+  projected: boolean;
   auditDueTimestamp: bigint;
   lastEpochPaid: bigint;
 };
@@ -166,6 +171,13 @@ export type AuditTarget = {
   epochsBehind: number;
   alreadyUnderAudit: boolean;
   owner: string;
+};
+
+export type CartItem = {
+  tokenId: bigint;
+  status: "pending" | "executing" | "done" | "failed";
+  txHash?: `0x${string}`;
+  error?: string;
 };
 
 export function toHttpUri(uri: string): string {

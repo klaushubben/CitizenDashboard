@@ -1,5 +1,6 @@
 import { Address, PublicClient, formatEther } from "viem";
 import {
+  AuditTarget,
   CITIZENS_ADDRESS,
   CitizenDashboardRow,
   CitizenMetadata,
@@ -229,4 +230,103 @@ export async function loadEvaderRows(publicClient: PublicClient, owner: Address)
     metadata: metadataList[index]?.metadata ?? null,
     imageUrl: metadataList[index]?.imageUrl ?? null
   }));
+}
+
+// --- Audit target scanner ---
+
+const SCAN_CHUNK = 500;
+
+export async function scanAuditTargets(
+  publicClient: PublicClient,
+  onProgress?: (scanned: number, total: number) => void
+): Promise<AuditTarget[]> {
+  const [currentEpoch, supply] = (await publicClient.multicall({
+    contracts: [
+      { address: GAME_ADDRESS, abi: gameAbi, functionName: "currentEpoch" },
+      { address: CITIZENS_ADDRESS, abi: citizensAbi, functionName: "totalSupply" }
+    ],
+    allowFailure: false
+  })) as [bigint, bigint];
+
+  if (currentEpoch <= 1n) return []; // epoch 1: nobody can be behind yet
+
+  const total = Number(supply);
+  const threshold = currentEpoch - 1n;
+  const targets: AuditTarget[] = [];
+
+  for (let start = 1; start <= total; start += SCAN_CHUNK) {
+    const end = Math.min(start + SCAN_CHUNK - 1, total);
+    const ids = Array.from({ length: end - start + 1 }, (_, i) => BigInt(start + i));
+
+    const lastEpochResults = await publicClient.multicall({
+      contracts: ids.map((id) => ({
+        address: GAME_ADDRESS,
+        abi: gameAbi,
+        functionName: "lastEpochPaid" as const,
+        args: [id]
+      })),
+      allowFailure: true
+    });
+
+    // Collect IDs that are behind
+    const behindIds: bigint[] = [];
+    const behindEpochs: bigint[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      const r = lastEpochResults[i];
+      if (r.status === "success") {
+        const lastPaid = r.result as bigint;
+        if (lastPaid < threshold) {
+          behindIds.push(ids[i]);
+          behindEpochs.push(lastPaid);
+        }
+      }
+    }
+
+    // For behind tokens, batch-fetch audit status and owner
+    if (behindIds.length > 0) {
+      const [auditResults, ownerResults] = await Promise.all([
+        publicClient.multicall({
+          contracts: behindIds.map((id) => ({
+            address: GAME_ADDRESS,
+            abi: gameAbi,
+            functionName: "auditDueTimestamp" as const,
+            args: [id]
+          })),
+          allowFailure: true
+        }),
+        publicClient.multicall({
+          contracts: behindIds.map((id) => ({
+            address: CITIZENS_ADDRESS,
+            abi: citizensAbi,
+            functionName: "ownerOf" as const,
+            args: [id]
+          })),
+          allowFailure: true
+        })
+      ]);
+
+      for (let j = 0; j < behindIds.length; j++) {
+        const auditTs = auditResults[j].status === "success" ? (auditResults[j].result as bigint) : 0n;
+        const owner = ownerResults[j].status === "success" ? (ownerResults[j].result as string) : "unknown";
+
+        targets.push({
+          tokenId: behindIds[j],
+          lastEpochPaid: behindEpochs[j],
+          epochsBehind: Number(currentEpoch - behindEpochs[j] - 1n),
+          alreadyUnderAudit: auditTs > 0n,
+          owner
+        });
+      }
+    }
+
+    onProgress?.(end, total);
+  }
+
+  // Sort: most behind first, not-yet-audited first
+  targets.sort((a, b) => {
+    if (a.alreadyUnderAudit !== b.alreadyUnderAudit) return a.alreadyUnderAudit ? 1 : -1;
+    return b.epochsBehind - a.epochsBehind;
+  });
+
+  return targets;
 }

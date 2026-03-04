@@ -117,6 +117,23 @@ export const gameAbi = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "uint64" }]
+  },
+  {
+    type: "function",
+    name: "audit",
+    stateMutability: "payable",
+    inputs: [
+      { name: "fromTokenId", type: "uint256" },
+      { name: "targetTokenId", type: "uint256" }
+    ],
+    outputs: []
+  },
+  {
+    type: "function",
+    name: "AUDIT_COST",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }]
   }
 ] as const;
 
@@ -141,6 +158,14 @@ export type EvaderDashboardRow = {
   tokenId: bigint;
   imageUrl: string | null;
   metadata: CitizenMetadata | null;
+};
+
+export type AuditTarget = {
+  tokenId: bigint;
+  lastEpochPaid: bigint;
+  epochsBehind: number;
+  alreadyUnderAudit: boolean;
+  owner: string;
 };
 
 export function toHttpUri(uri: string): string {
